@@ -2,144 +2,104 @@ from flask import Flask, render_template, request
 
 app = Flask(__name__)
 
-# -------------------------------
+# ---------------------------
 # 🔍 Scan Ports (simulation)
-# -------------------------------
+# ---------------------------
 def scan_ports(target):
-    # تقدر تبدلها بـ nmap من بعد
-    return [22, 80, 443]
+    if not target:
+        return []
+    return [22, 80, 443]  # simulation
 
-
-# -------------------------------
+# ---------------------------
 # 🔐 Password Strength
-# -------------------------------
+# ---------------------------
 def password_strength(password):
     score = 0
 
     if len(password) >= 8:
-        score += 1
-    if any(c.isupper() for c in password):
-        score += 1
+        score += 25
     if any(c.isdigit() for c in password):
-        score += 1
-    if any(c in "!@#$%^&*" for c in password):
-        score += 1
+        score += 25
+    if any(c.isupper() for c in password):
+        score += 25
+    if any(c in "!@#$%^&*()" for c in password):
+        score += 25
 
-    if score <= 1:
-        return "Weak", score
-    elif score <= 3:
-        return "Medium", score
+    if score >= 75:
+        level = "Strong"
+    elif score >= 50:
+        level = "Medium"
     else:
-        return "Strong", score
+        level = "Weak"
 
+    return level, score
 
-# -------------------------------
-# 🛡️ Vulnerabilities
-# -------------------------------
+# ---------------------------
+# 🛡️ Detect Vulnerabilities
+# ---------------------------
 def detect_vulnerabilities(open_ports):
     vulns = []
 
     if 22 in open_ports:
-        vulns.append("SSH Port exposed")
-
+        vulns.append("Port 22 SSH: Risque si mot de passe faible")
     if 80 in open_ports:
-        vulns.append("HTTP not secure (use HTTPS)")
+        vulns.append("Port 80 HTTP: Non chiffré")
+    if 443 not in open_ports:
+        vulns.append("Port 443 HTTPS: Manquant")
 
     return vulns
 
-
-# -------------------------------
-# 📊 Score
-# -------------------------------
+# ---------------------------
+# 📊 Calculate Score
+# ---------------------------
 def calculate_score(pwd_level, open_ports, vulns):
     score = 100
 
-    score -= len(open_ports) * 5
-    score -= len(vulns) * 10
-
-    # password غير إلا كاين
-    if pwd_level:
-        if pwd_level == "Weak":
-            score -= 20
-        elif pwd_level == "Medium":
-            score -= 10
-
-    return max(score, 0)
-
-
-# -------------------------------
-# 💡 Recommendations
-# -------------------------------
-def generate_recommendations(open_ports, vulns, pwd_level):
-    recs = []
+    score -= len(vulns) * 15
 
     if pwd_level == "Weak":
-        recs.append("استعمل password قوية")
+        score -= 30
+    elif pwd_level == "Medium":
+        score -= 15
+    elif pwd_level == "Not Checked":
+        score -= 5
 
-    if 22 in open_ports:
-        recs.append("Secure SSH (port 22)")
+    return max(0, score)
 
-    if vulns:
-        recs.append("Fix vulnerabilities")
-
-    return recs
-
-
-# -------------------------------
-# 🌐 Main Route
-# -------------------------------
+# ---------------------------
+# 🌐 Route
+# ---------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
-    error = None
 
     if request.method == "POST":
-        target = request.form.get("target")
+        target = request.form["target"]
         password = request.form.get("password")
 
-        # ✅ target ضروري
-        if not target or not target.strip():
-            error = "دخل IP أو Domain صحيح"
-            return render_template("index.html", result=result, error=error)
+        open_ports = scan_ports(target)
 
-        try:
-            # 🔍 scan
-            open_ports = scan_ports(target) or []
+        if password and password.strip():
+            pwd_level, pwd_score = password_strength(password)
+        else:
+            pwd_level, pwd_score = "Not Checked", 0
 
-            # 🔐 password اختياري
-            if password and password.strip():
-                pwd_level, pwd_score = password_strength(password)
-            else:
-                pwd_level, pwd_score = None, None
+        vulns = detect_vulnerabilities(open_ports)
+        score = calculate_score(pwd_level, open_ports, vulns)
 
-            # 🛡️ vulnerabilities
-            vulns = detect_vulnerabilities(open_ports) or []
+        result = {
+            "target": target,
+            "open_ports": open_ports,
+            "pwd_level": pwd_level,
+            "pwd_score": pwd_score,
+            "vulns": vulns,
+            "score": score
+        }
 
-            # 📊 score
-            score = calculate_score(pwd_level, open_ports, vulns)
+    return render_template("index.html", result=result)
 
-            # 💡 recommendations
-            recommendations = generate_recommendations(open_ports, vulns, pwd_level)
-
-            # 📦 result
-            result = {
-                "target": target,
-                "open_ports": open_ports,
-                "password_level": pwd_level,
-                "password_score": pwd_score,
-                "vulnerabilities": vulns,
-                "score": score,
-                "recommendations": recommendations
-            }
-
-        except Exception as e:
-            error = f"وقع خطأ: {str(e)}"
-
-    return render_template("index.html", result=result, error=error)
-
-
-# -------------------------------
-# 🚀 Run
-# -------------------------------
+# ---------------------------
+# 🚀 Run App
+# ---------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
